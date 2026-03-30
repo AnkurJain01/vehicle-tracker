@@ -1,0 +1,21 @@
+{
+  "name": "Vehicle Expense Tracker",
+  "short_name": "VehicleTracker",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#e2e8f0",
+  "theme_color": "#0f172a",
+  "description": "Track vehicles, trips, expenses, reports, and fuel mileage offline.",
+  "icons": [
+    {
+      "src": "icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

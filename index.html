@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Vehicle Expense Tracker</title>
+  <meta name="theme-color" content="#0f172a" />
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Vehicle Expense Tracker</h1>
+      <p class="subtitle">Offline-first PWA for vehicles, trips, expenses, reports, and mileage.</p>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab active" data-tab="dashboard">Dashboard</button>
+    <button class="tab" data-tab="vehicles">Vehicles</button>
+    <button class="tab" data-tab="trips">Trips</button>
+    <button class="tab" data-tab="expenses">Expenses</button>
+    <button class="tab" data-tab="reports">Reports</button>
+  </nav>
+
+  <main>
+    <section id="dashboard" class="tab-panel active">
+      <div class="stats-grid" id="dashboardStats"></div>
+
+      <div class="grid two">
+        <section class="card">
+          <h2>Backup & Restore</h2>
+          <p class="muted">Download your full local data as a JSON backup, and restore it later on the same or another device.</p>
+          <div class="actions">
+            <button type="button" id="downloadBackupBtn">Download Backup</button>
+            <button type="button" class="secondary" id="restoreBackupBtn">Restore Backup</button>
+          </div>
+          <input type="file" id="restoreBackupInput" accept="application/json,.json" hidden />
+          <div id="backupStatus" class="info-box">No backup action yet.</div>
+        </section>
+
+        <section class="card">
+          <h2>Quick Insights</h2>
+          <div id="quickInsights" class="stack"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="vehicles" class="tab-panel">
+      <div class="grid two">
+        <section class="card">
+          <h2 id="vehicleFormTitle">Add Vehicle</h2>
+          <form id="vehicleForm" class="form-grid">
+            <input type="hidden" id="vehicleId" />
+            <label>
+              Vehicle Type
+              <select id="vehicleType" required>
+                <option value="">Select type</option>
+                <option value="Car">Car</option>
+                <option value="Bike">Bike</option>
+              </select>
+            </label>
+            <label>
+              Vehicle Name
+              <input type="text" id="vehicleName" required placeholder="e.g. City / Access 125" />
+            </label>
+            <div class="actions">
+              <button type="submit">Save Vehicle</button>
+              <button type="button" class="secondary" id="vehicleResetBtn">Clear</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Vehicles</h2>
+          <div id="vehicleList" class="list"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="trips" class="tab-panel">
+      <div class="grid two">
+        <section class="card">
+          <h2 id="tripFormTitle">Add Trip</h2>
+          <form id="tripForm" class="form-grid">
+            <input type="hidden" id="tripId" />
+            <label>
+              Trip Name
+              <input type="text" id="tripName" required placeholder="e.g. Weekend Ride" />
+            </label>
+            <label>
+              Start Date
+              <input type="date" id="tripStartDate" required />
+            </label>
+            <label>
+              End Date
+              <input type="date" id="tripEndDate" required />
+            </label>
+            <label>
+              Total KMs
+              <input type="number" id="tripTotalKms" min="0" step="0.1" required />
+            </label>
+            <label>
+              Thumbnail
+              <input type="file" id="tripThumbnail" accept="image/*" />
+            </label>
+            <div class="actions">
+              <button type="submit">Save Trip</button>
+              <button type="button" class="secondary" id="tripResetBtn">Clear</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Trips</h2>
+          <div id="tripList" class="list"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="expenses" class="tab-panel">
+      <div class="grid two">
+        <section class="card">
+          <h2 id="expenseFormTitle">Add Expense</h2>
+          <form id="expenseForm" class="form-grid">
+            <input type="hidden" id="expenseId" />
+            <label>
+              Name / Description
+              <input type="text" id="expenseName" required />
+            </label>
+            <label>
+              Date
+              <input type="date" id="expenseDate" required />
+            </label>
+            <label>
+              Vehicle
+              <select id="expenseVehicle" required></select>
+            </label>
+            <label>
+              KM Reading
+              <input type="number" id="expenseKmReading" min="0" step="0.1" required />
+            </label>
+            <label>
+              Cost
+              <input type="number" id="expenseCost" min="0" step="0.01" required />
+            </label>
+            <label>
+              Trip (optional)
+              <select id="expenseTrip"></select>
+            </label>
+            <label>
+              Category
+              <div class="inline-row">
+                <select id="expenseCategory" required></select>
+                <input type="text" id="newCategoryInput" placeholder="New type" />
+                <button type="button" class="secondary" id="addCategoryBtn">Add</button>
+              </div>
+            </label>
+            <label>
+              Fuel Volume (optional, for mileage)
+              <input type="number" id="expenseFuelVolume" min="0" step="0.01" placeholder="Litres" />
+            </label>
+            <label class="full">
+              Other Info
+              <textarea id="expenseOtherInfo" rows="3" placeholder="Notes, service details, toll booth, etc."></textarea>
+            </label>
+            <div class="actions">
+              <button type="submit">Save Expense</button>
+              <button type="button" class="secondary" id="expenseResetBtn">Clear</button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card">
+          <h2>Expense Filters</h2>
+          <form id="expenseFilterForm" class="form-grid">
+            <label>
+              Vehicle
+              <select id="filterVehicle"></select>
+            </label>
+            <label>
+              Trip
+              <select id="filterTrip"></select>
+            </label>
+            <label>
+              Category
+              <select id="filterCategory"></select>
+            </label>
+            <label>
+              Start Date
+              <input type="date" id="filterStartDate" />
+            </label>
+            <label>
+              End Date
+              <input type="date" id="filterEndDate" />
+            </label>
+            <div class="actions">
+              <button type="submit">Apply Filters</button>
+              <button type="button" class="secondary" id="clearFiltersBtn">Clear</button>
+            </div>
+          </form>
+          <h2>Expenses</h2>
+          <div id="expenseList" class="list"></div>
+        </section>
+      </div>
+    </section>
+
+    <section id="reports" class="tab-panel">
+      <div class="grid two">
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Expense Report</h2>
+              <p class="muted">Choose a reporting period. Filters from the Expenses tab still apply.</p>
+            </div>
+            <label class="compact-field">
+              <span>Period</span>
+              <select id="reportPeriod">
+                <option value="month">Current Month</option>
+                <option value="quarter">Current Quarter</option>
+                <option value="year">Current Year</option>
+                <option value="filtered">Only Applied Filters</option>
+              </select>
+            </label>
+          </div>
+          <div id="reportSummary" class="stack"></div>
+          <div id="reportBreakdown" class="stack"></div>
+        </section>
+        <section class="card">
+          <h2>Mileage Insights</h2>
+          <div id="mileageSummary" class="stack"></div>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <template id="emptyStateTemplate">
+    <div class="empty-state">Nothing yet.</div>
+  </template>
+
+  <script src="app.js"></script>
+</body>
+</html>
