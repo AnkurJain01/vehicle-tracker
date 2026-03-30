@@ -47,3 +47,11 @@ That means:
 - Use **Restore Backup** to replace the current local app data with a backup file
 
 - Reports page now includes a period selector for month, quarter, year, or applied filters, plus pie charts for breakdowns
+
+- Added a configurable **Maintenance** tab with per-vehicle view and category toggles saved locally
+
+- Fixed a JavaScript issue in the Maintenance update that was preventing tabs from working
+
+- Fixed duplicate `async` token in app.js that caused a browser syntax error
+
+- Bumped IndexedDB version so the new `settings` store is created automatically for existing users

@@ -21,6 +21,7 @@
     <button class="tab" data-tab="vehicles">Vehicles</button>
     <button class="tab" data-tab="trips">Trips</button>
     <button class="tab" data-tab="expenses">Expenses</button>
+    <button class="tab" data-tab="maintenance">Maintenance</button>
     <button class="tab" data-tab="reports">Reports</button>
   </nav>
 
@@ -202,6 +203,38 @@
           </form>
           <h2>Expenses</h2>
           <div id="expenseList" class="list"></div>
+        </section>
+      </div>
+    </section>
+
+
+    <section id="maintenance" class="tab-panel">
+      <div class="grid two">
+        <section class="card">
+          <div class="section-header">
+            <div>
+              <h2>Maintenance View</h2>
+              <p class="muted">See maintenance-related expenses separately for a selected vehicle.</p>
+            </div>
+            <label class="compact-field">
+              <span>Vehicle</span>
+              <select id="maintenanceVehicleFilter"></select>
+            </label>
+          </div>
+
+          <div class="stack">
+            <div class="list-item">
+              <strong>Eligible Maintenance Categories</strong>
+              <p class="muted">Choose which categories should appear in the Maintenance tab. These settings are saved locally on your device.</p>
+              <div id="maintenanceCategoryConfig" class="checklist"></div>
+            </div>
+            <div id="maintenanceSummary" class="stack"></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>Maintenance History</h2>
+          <div id="maintenanceList" class="stack"></div>
         </section>
       </div>
     </section>

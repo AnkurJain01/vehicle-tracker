@@ -1,7 +1,11 @@
 const DB_NAME = "vehicleExpenseTrackerDB";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const DEFAULT_CATEGORIES = ["Fuel", "Service", "Repair", "Toll", "Parking", "Insurance", "Other"];
-const STORE_NAMES = ["vehicles", "trips", "expenses", "categories"];
+// DB_VERSION is bumped whenever new object stores are added.
+// Existing users with an older local DB need an upgrade step so IndexedDB creates the new stores.
+
+const STORE_NAMES = ["vehicles", "trips", "expenses", "categories", "settings"];
+const DEFAULT_MAINTENANCE_CATEGORIES = ["Service", "Repair", "Tyre", "Wheel Alignment", "Wheel Balance", "Alignment", "Balancing", "Pollution", "Insurance"];
 let db;
 let activeFilters = {
   vehicleId: "",
@@ -12,14 +16,20 @@ let activeFilters = {
 };
 
 document.addEventListener("DOMContentLoaded", async () => {
-  await initDB();
-  await seedCategories();
-  bindTabs();
-  bindForms();
-  bindBackupRestore();
-  bindReportControls();
-  registerServiceWorker();
-  await refreshUI();
+  try {
+    await initDB();
+    await seedCategories();
+    await seedSettings();
+    bindTabs();
+    bindForms();
+    bindBackupRestore();
+    bindReportControls();
+    bindMaintenanceControls();
+    registerServiceWorker();
+    await refreshUI();
+  } catch (error) {
+    console.error("App init failed:", error);
+  }
 });
 
 function initDB() {
@@ -39,6 +49,9 @@ function initDB() {
       if (!db.objectStoreNames.contains("categories")) {
         db.createObjectStore("categories", { keyPath: "id" });
       }
+      if (!db.objectStoreNames.contains("settings")) {
+        db.createObjectStore("settings", { keyPath: "id" });
+      }
     };
     req.onsuccess = (event) => {
       db = event.target.result;
@@ -54,6 +67,26 @@ async function seedCategories() {
   for (const name of DEFAULT_CATEGORIES) {
     await put("categories", { id: slugify(name), name });
   }
+}
+
+async function seedSettings() {
+  const allSettings = await getAll("settings");
+  const maintenanceSetting = allSettings.find(item => item.id === "maintenanceCategories");
+  if (!maintenanceSetting) {
+    await put("settings", {
+      id: "maintenanceCategories",
+      values: DEFAULT_MAINTENANCE_CATEGORIES
+    });
+  }
+}
+
+async function getSetting(id) {
+  const settings = await getAll("settings");
+  return settings.find(item => item.id === id) || null;
+}
+
+async function saveSetting(id, payload) {
+  await put("settings", { id, ...payload });
 }
 
 function tx(storeName, mode = "readonly") {
@@ -153,6 +186,13 @@ function bindReportControls() {
   const reportPeriod = document.getElementById("reportPeriod");
   if (reportPeriod) {
     reportPeriod.addEventListener("change", () => refreshUI());
+  }
+}
+
+function bindMaintenanceControls() {
+  const vehicleFilter = document.getElementById("maintenanceVehicleFilter");
+  if (vehicleFilter) {
+    vehicleFilter.addEventListener("change", () => refreshUI());
   }
 }
 
@@ -258,15 +298,20 @@ function resetExpenseForm() {
 }
 
 async function refreshUI() {
-  const [vehicles, trips, expenses, categories] = await Promise.all([
-    getAll("vehicles"), getAll("trips"), getAll("expenses"), getAll("categories")
+  const [vehicles, trips, expenses, categories, maintenanceSetting] = await Promise.all([
+    getAll("vehicles"),
+    getAll("trips"),
+    getAll("expenses"),
+    getAll("categories"),
+    getSetting("maintenanceCategories")
   ]);
 
   populateDropdowns({ vehicles, trips, categories });
   renderVehicles(vehicles);
   renderTrips(trips, expenses);
   renderExpenses(expenses, vehicles, trips);
-  renderReports({ vehicles, trips, expenses, categories });
+  renderMaintenance({ vehicles, expenses, categories, maintenanceSetting });
+  renderReports({ vehicles, trips, expenses });
   renderDashboard({ vehicles, trips, expenses });
 }
 
@@ -291,6 +336,15 @@ function populateDropdowns({ vehicles, trips, categories }) {
   document.getElementById("filterCategory").value = activeFilters.category;
   document.getElementById("filterStartDate").value = activeFilters.startDate;
   document.getElementById("filterEndDate").value = activeFilters.endDate;
+
+  const maintenanceVehicleFilter = document.getElementById("maintenanceVehicleFilter");
+  if (maintenanceVehicleFilter) {
+    const currentValue = maintenanceVehicleFilter.value;
+    maintenanceVehicleFilter.innerHTML = `<option value="">All vehicles</option>` + vehicles.map(v => `<option value="${v.id}">${escapeHtml(v.name)}</option>`).join("");
+    if ([...maintenanceVehicleFilter.options].some(opt => opt.value === currentValue)) {
+      maintenanceVehicleFilter.value = currentValue;
+    }
+  }
 }
 
 function renderVehicles(vehicles) {
@@ -399,6 +453,120 @@ function renderDashboard({ vehicles, trips, expenses }) {
       <div class="meta">${formatDate(item.date)} · ${escapeHtml(item.category)} · ${formatCurrency(item.cost)}</div>
     </div>
   `).join("");
+}
+
+
+function renderMaintenance({ vehicles, expenses, categories, maintenanceSetting }) {
+  const maintenanceList = document.getElementById("maintenanceList");
+  const maintenanceSummary = document.getElementById("maintenanceSummary");
+  const maintenanceCategoryConfig = document.getElementById("maintenanceCategoryConfig");
+  const selectedVehicleId = document.getElementById("maintenanceVehicleFilter")?.value || "";
+  const enabledCategories = Array.isArray(maintenanceSetting?.values) ? maintenanceSetting.values : DEFAULT_MAINTENANCE_CATEGORIES;
+
+  maintenanceCategoryConfig.innerHTML = categories
+    .sort((a, b) => a.name.localeCompare(b.name))
+    .map(category => {
+      const checked = enabledCategories.includes(category.name) ? "checked" : "";
+      const checkboxId = `maint-cat-${slugify(category.name)}`;
+      return `
+        <div class="check-item">
+          <input type="checkbox" id="${checkboxId}" data-category="${escapeHtml(category.name)}" ${checked} onchange="toggleMaintenanceCategory(this.dataset.category, this.checked)" />
+          <label for="${checkboxId}">
+            <span>${escapeHtml(category.name)}</span>
+            <span class="pill">${enabledCategories.includes(category.name) ? "Included" : "Excluded"}</span>
+          </label>
+        </div>
+      `;
+    }).join("");
+
+  const filtered = expenses
+    .filter(exp => enabledCategories.includes(exp.category))
+    .filter(exp => !selectedVehicleId || exp.vehicleId === selectedVehicleId)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  if (!filtered.length) {
+    maintenanceSummary.innerHTML = `<div class="list-item"><strong>No maintenance entries</strong><div class="meta">Try enabling more categories or choosing another vehicle.</div></div>`;
+    renderEmpty(maintenanceList);
+    return;
+  }
+
+  const selectedVehicle = vehicles.find(v => v.id === selectedVehicleId);
+  const totalCost = sumCost(filtered);
+  const latestEntry = filtered[0];
+  const latestService = filtered.find(item => item.category === "Service");
+
+  maintenanceSummary.innerHTML = `
+    <div class="summary-grid">
+      <div class="stat-card">
+        <h3>Vehicle</h3>
+        <strong>${escapeHtml(selectedVehicle ? selectedVehicle.name : "All Vehicles")}</strong>
+      </div>
+      <div class="stat-card">
+        <h3>Total Entries</h3>
+        <strong>${filtered.length}</strong>
+      </div>
+      <div class="stat-card">
+        <h3>Total Cost</h3>
+        <strong>${formatCurrency(totalCost)}</strong>
+      </div>
+      <div class="stat-card">
+        <h3>Last Service</h3>
+        <strong>${latestService ? formatDate(latestService.date) : "-"}</strong>
+      </div>
+    </div>
+    <div class="list-item">
+      <strong>Latest Maintenance Entry</strong>
+      <div class="meta">${escapeHtml(latestEntry.name)} · ${escapeHtml(latestEntry.category)} · ${formatDate(latestEntry.date)} · ${formatCurrency(latestEntry.cost)}</div>
+    </div>
+  `;
+
+  const grouped = groupExpensesByCategory(filtered);
+  maintenanceList.innerHTML = grouped.map(group => `
+    <div class="maintenance-group">
+      <h3 class="maintenance-group-title">${escapeHtml(group.category)}</h3>
+      <div class="section-subtitle">${group.items.length} entries · ${formatCurrency(sumCost(group.items))}</div>
+      <div class="stack">
+        ${group.items.map(item => {
+          const vehicle = vehicles.find(v => v.id === item.vehicleId);
+          return `
+            <div class="list-item">
+              <strong>${escapeHtml(item.name)}</strong>
+              <div class="meta">${formatDate(item.date)} · ${vehicle ? escapeHtml(vehicle.name) : "Unknown vehicle"} · ${formatCurrency(item.cost)}</div>
+              <div class="meta">KM: ${Number(item.kmReading || 0).toFixed(1)}</div>
+              ${item.otherInfo ? `<div class="meta">${escapeHtml(item.otherInfo)}</div>` : ""}
+              <div class="item-actions">
+                <button class="secondary" onclick="editExpense('${item.id}')">Edit</button>
+                <button class="danger" onclick="deleteExpense('${item.id}')">Delete</button>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `).join("");
+}
+
+function groupExpensesByCategory(items) {
+  const map = new Map();
+  for (const item of items) {
+    if (!map.has(item.category)) {
+      map.set(item.category, []);
+    }
+    map.get(item.category).push(item);
+  }
+  return [...map.entries()]
+    .map(([category, groupedItems]) => ({ category, items: groupedItems }))
+    .sort((a, b) => a.category.localeCompare(b.category));
+}
+
+async function toggleMaintenanceCategory(category, checked) {
+  const current = await getSetting("maintenanceCategories");
+  const values = Array.isArray(current?.values) ? [...current.values] : [];
+  const nextValues = checked
+    ? Array.from(new Set([...values, category]))
+    : values.filter(item => item !== category);
+  await saveSetting("maintenanceCategories", { values: nextValues });
+  await refreshUI();
 }
 
 function renderReports({ vehicles, trips, expenses }) {
@@ -549,6 +717,7 @@ async function restoreBackupFromFile(event) {
     }
 
     await seedCategories();
+    await seedSettings();
     await refreshUI();
     setBackupStatus(`Backup restored successfully from ${file.name}`);
   } catch (error) {
