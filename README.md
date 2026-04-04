@@ -4,7 +4,7 @@ A simple offline-first Progressive Web App for Android/mobile browsers.
 
 ## Features
 - Multiple vehicles (cars, bikes)
-- Trip add/update/delete with thumbnail upload
+- Trip add/update/delete with thumbnail upload and start/end odometer readings
 - Expense add/update/delete
 - Expense filters by vehicle, trip, category, and date
 - Auto trip expense totals

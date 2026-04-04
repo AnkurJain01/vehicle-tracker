@@ -166,6 +166,21 @@ function defaultTripThumbnail(name) {
 function sumCost(items) {
   return items.reduce((sum, item) => sum + Number(item.cost || 0), 0);
 }
+function getTripDistanceKms(trip) {
+  if (trip?.startKm === undefined || trip?.startKm === null || trip?.startKm === "") {
+    return null;
+  }
+  if (trip?.endKm === undefined || trip?.endKm === null || trip?.endKm === "") {
+    return null;
+  }
+
+  const startKm = Number(trip.startKm);
+  const endKm = Number(trip.endKm);
+  if (!Number.isFinite(startKm) || !Number.isFinite(endKm) || endKm < startKm) {
+    return null;
+  }
+  return endKm - startKm;
+}
 function rangeMatches(date, startDate, endDate) {
   if (!date) return false;
   if (startDate && date < startDate) return false;
@@ -341,12 +356,23 @@ async function saveTripHandler(event) {
   if (fileInput.files?.[0]) {
     thumbnail = await fileToDataUrl(fileInput.files[0]);
   }
+
+  const startKm = Number(document.getElementById("tripStartKm").value || 0);
+  const endKmInput = document.getElementById("tripEndKm").value.trim();
+  const endKm = endKmInput === "" ? null : Number(endKmInput);
+  if (endKm !== null && endKm < startKm) {
+    alert("End KM reading must be greater than or equal to Start KM reading.");
+    return;
+  }
+
   const item = {
     id: existingId || uid("trip"),
     name: document.getElementById("tripName").value.trim(),
     startDate: document.getElementById("tripStartDate").value,
     endDate: document.getElementById("tripEndDate").value,
-    totalKms: Number(document.getElementById("tripTotalKms").value || 0),
+    startKm,
+    endKm,
+    totalKms: endKm !== null ? endKm - startKm : null,
     thumbnail: thumbnail || defaultTripThumbnail(document.getElementById("tripName").value.trim())
   };
   await put("trips", item);
@@ -551,6 +577,11 @@ function renderTrips(trips, expenses) {
   if (!trips.length) return renderEmpty(container);
   container.innerHTML = trips.map(t => {
     const totalExpense = sumCost(expenses.filter(e => e.tripId === t.id));
+    const tripDistance = getTripDistanceKms(t);
+    const distanceLabel = tripDistance === null ? "-" : `${tripDistance.toFixed(1)} KM`;
+    const readingLabel = t.startKm !== undefined && t.startKm !== null && t.startKm !== ""
+      ? `Odometer: ${Number(t.startKm).toFixed(1)} → ${t.endKm !== undefined && t.endKm !== null && t.endKm !== "" ? Number(t.endKm).toFixed(1) : "-"}`
+      : "Odometer readings unavailable";
     return `
       <div class="list-item">
         <div class="item-header">
@@ -558,7 +589,8 @@ function renderTrips(trips, expenses) {
           <div>
             <strong>${escapeHtml(t.name)}</strong>
             <div class="meta">${formatDate(t.startDate)} → ${formatDate(t.endDate)}</div>
-            <div class="meta">${Number(t.totalKms || 0).toFixed(1)} KM · ${formatCurrency(totalExpense)}</div>
+            <div class="meta">${distanceLabel} · ${formatCurrency(totalExpense)}</div>
+            <div class="meta">${readingLabel}</div>
           </div>
         </div>
         <div class="meta">Internal ID: ${escapeHtml(t.id)}</div>
@@ -1259,7 +1291,8 @@ async function editTrip(id) {
   document.getElementById("tripName").value = item.name;
   document.getElementById("tripStartDate").value = item.startDate;
   document.getElementById("tripEndDate").value = item.endDate;
-  document.getElementById("tripTotalKms").value = item.totalKms;
+  document.getElementById("tripStartKm").value = item.startKm ?? "";
+  document.getElementById("tripEndKm").value = item.endKm ?? "";
   document.getElementById("tripFormTitle").textContent = "Update Trip";
   activateTab("trips");
 }

@@ -33,11 +33,11 @@
         <div class="section-header">
           <div>
             <h2>Reminder Center</h2>
-            <p class="muted">Recurring expense reminders are stored locally on this device and checked when the app is opened.</p>
+            <p class="muted">Recurring expense reminders are stored locally on this device, checked when the app opens, and rechecked every minute while the app stays active.</p>
           </div>
           <button type="button" class="secondary compact-button" id="enableNotificationsBtn">Enable Browser Alerts</button>
         </div>
-        <div id="notificationStatus" class="info-box">Browser alerts are optional and only work while this app is active on this device.</div>
+        <div id="notificationStatus" class="info-box">Browser alerts require HTTPS or localhost and work best from the installed PWA.</div>
         <div id="recurringReminderList" class="stack"></div>
       </section>
 
@@ -111,8 +111,12 @@
               <input type="date" id="tripEndDate" required />
             </label>
             <label>
-              Total KMs
-              <input type="number" id="tripTotalKms" min="0" step="0.1" required />
+              Start KM Reading
+              <input type="number" id="tripStartKm" min="0" step="0.1" required />
+            </label>
+            <label>
+              End KM Reading
+              <input type="number" id="tripEndKm" min="0" step="0.1" placeholder="Optional" />
             </label>
             <label>
               Thumbnail
