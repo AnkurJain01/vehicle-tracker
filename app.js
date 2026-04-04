@@ -134,14 +134,28 @@ function slugify(text) {
   return String(text).trim().toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 function todayISO() {
-  return new Date().toISOString().slice(0, 10);
+  return formatLocalDate(new Date());
 }
 function formatCurrency(value) {
   return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(value || 0);
 }
 function formatDate(date) {
   if (!date) return "-";
-  return new Date(date).toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+  const parsed = parseISODate(date);
+  if (!parsed) return "-";
+  return parsed.toLocaleDateString("en-IN", { year: "numeric", month: "short", day: "numeric" });
+}
+function parseISODate(date) {
+  if (!date) return null;
+  const [year, month, day] = String(date).split("-").map(Number);
+  if (!year || !month || !day) return null;
+  return new Date(year, month - 1, day);
+}
+function formatLocalDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 function defaultTripThumbnail(name) {
   const label = encodeURIComponent((name || "Trip").slice(0, 2).toUpperCase());
@@ -695,14 +709,16 @@ function isReminderActiveToday(item, referenceDate = todayISO()) {
 }
 
 function addDays(date, days) {
-  const next = new Date(`${date}T00:00:00`);
+  const next = parseISODate(date);
+  if (!next) return "";
   next.setDate(next.getDate() + days);
-  return toISO(next);
+  return formatLocalDate(next);
 }
 
 function diffInDays(startDate, endDate) {
-  const start = new Date(`${startDate}T00:00:00`);
-  const end = new Date(`${endDate}T00:00:00`);
+  const start = parseISODate(startDate);
+  const end = parseISODate(endDate);
+  if (!start || !end) return 0;
   return Math.round((end - start) / 86400000);
 }
 
@@ -1223,7 +1239,7 @@ function getCurrentYearRange() {
   };
 }
 function toISO(date) {
-  return new Date(date).toISOString().slice(0, 10);
+  return formatLocalDate(new Date(date));
 }
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, s => ({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" }[s]));
