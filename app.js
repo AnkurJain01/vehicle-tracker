@@ -1,10 +1,10 @@
 const DB_NAME = "vehicleExpenseTrackerDB";
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 const DEFAULT_CATEGORIES = ["Fuel", "Service", "Repair", "Toll", "Parking", "Insurance", "Other"];
 // DB_VERSION is bumped whenever new object stores are added.
 // Existing users with an older local DB need an upgrade step so IndexedDB creates the new stores.
 
-const STORE_NAMES = ["vehicles", "trips", "expenses", "categories", "settings"];
+const STORE_NAMES = ["vehicles", "trips", "expenses", "recurringExpenses", "categories", "settings"];
 const DEFAULT_MAINTENANCE_CATEGORIES = ["Service", "Repair", "Tyre", "Wheel Alignment", "Wheel Balance", "Alignment", "Balancing", "Pollution", "Insurance"];
 let db;
 let activeFilters = {
@@ -21,7 +21,10 @@ document.addEventListener("DOMContentLoaded", async () => {
     await seedCategories();
     await seedSettings();
     bindTabs();
+    bindDashboardStats();
     bindForms();
+    bindExpenseSectionToggles();
+    bindRecurringReminderControls();
     bindBackupRestore();
     bindReportControls();
     bindMaintenanceControls();
@@ -45,6 +48,9 @@ function initDB() {
       }
       if (!db.objectStoreNames.contains("expenses")) {
         db.createObjectStore("expenses", { keyPath: "id" });
+      }
+      if (!db.objectStoreNames.contains("recurringExpenses")) {
+        db.createObjectStore("recurringExpenses", { keyPath: "id" });
       }
       if (!db.objectStoreNames.contains("categories")) {
         db.createObjectStore("categories", { keyPath: "id" });
@@ -153,11 +159,17 @@ function rangeMatches(date, startDate, endDate) {
 
 function bindTabs() {
   document.querySelectorAll(".tab").forEach(btn => {
-    btn.addEventListener("click", () => {
-      document.querySelectorAll(".tab, .tab-panel").forEach(el => el.classList.remove("active"));
-      btn.classList.add("active");
-      document.getElementById(btn.dataset.tab).classList.add("active");
-    });
+    btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+  });
+}
+
+function bindDashboardStats() {
+  const stats = document.getElementById("dashboardStats");
+  if (!stats) return;
+  stats.addEventListener("click", event => {
+    const trigger = event.target.closest("[data-dashboard-tab]");
+    if (!trigger) return;
+    activateTab(trigger.dataset.dashboardTab);
   });
 }
 
@@ -171,7 +183,71 @@ function bindForms() {
   document.getElementById("expenseResetBtn").addEventListener("click", resetExpenseForm);
   document.getElementById("clearFiltersBtn").addEventListener("click", clearFilters);
   document.getElementById("addCategoryBtn").addEventListener("click", addCategoryHandler);
+  document.getElementById("expenseHasReminder").addEventListener("change", event => {
+    toggleExpenseReminderFields(event.target.checked, { clearWhenHidden: true });
+  });
   document.getElementById("expenseDate").value = todayISO();
+  toggleExpenseReminderFields(false);
+}
+
+function toggleExpenseReminderFields(isVisible, options = {}) {
+  const fields = document.getElementById("expenseReminderFields");
+  const nextDate = document.getElementById("expenseNextDate");
+  const reminderDays = document.getElementById("expenseReminderDays");
+  const checkbox = document.getElementById("expenseHasReminder");
+  if (!fields || !nextDate || !reminderDays || !checkbox) return;
+
+  checkbox.checked = isVisible;
+  fields.classList.toggle("is-collapsed", !isVisible);
+  nextDate.required = isVisible;
+  reminderDays.required = isVisible;
+
+  if (!isVisible && options.clearWhenHidden) {
+    nextDate.value = "";
+    reminderDays.value = "1";
+  }
+}
+
+function bindExpenseSectionToggles() {
+  document.querySelectorAll(".filters-toggle").forEach(button => {
+    const cardId = button.dataset.target;
+    const contentId = button.dataset.content;
+    if (cardId && contentId) {
+      setExpenseSectionState(cardId, contentId, button, button.getAttribute("aria-expanded") === "true");
+    }
+
+    button.addEventListener("click", () => {
+      const expanded = button.getAttribute("aria-expanded") === "true";
+      setExpenseSectionState(cardId, contentId, button, !expanded);
+    });
+  });
+}
+
+function setExpenseSectionState(cardId, contentId, button, isExpanded) {
+  const card = document.getElementById(cardId);
+  const content = document.getElementById(contentId);
+  if (!card || !content || !button) return;
+
+  card.classList.toggle("filters-open", isExpanded);
+  card.classList.toggle("expense-section-collapsed", !isExpanded);
+  content.classList.toggle("is-collapsed", !isExpanded);
+  button.setAttribute("aria-expanded", String(isExpanded));
+
+  if (button.id === "expenseFormToggleBtn") {
+    button.textContent = isExpanded ? "Hide Form" : "Show Form";
+    return;
+  }
+
+  button.textContent = isExpanded ? "Hide Filters" : "Show Filters";
+}
+
+function bindRecurringReminderControls() {
+  const enableNotificationsBtn = document.getElementById("enableNotificationsBtn");
+  if (enableNotificationsBtn) {
+    enableNotificationsBtn.addEventListener("click", requestNotificationPermission);
+  }
+
+  window.addEventListener("focus", () => refreshUI());
 }
 
 function bindBackupRestore() {
@@ -235,6 +311,7 @@ async function saveTripHandler(event) {
 async function saveExpenseHandler(event) {
   event.preventDefault();
   const id = document.getElementById("expenseId").value || uid("exp");
+  const reminderId = document.getElementById("expenseReminderId").value;
   const item = {
     id,
     name: document.getElementById("expenseName").value.trim(),
@@ -248,9 +325,11 @@ async function saveExpenseHandler(event) {
     fuelVolume: Number(document.getElementById("expenseFuelVolume").value || 0)
   };
   await put("expenses", item);
+  await syncExpenseReminder(item, reminderId);
   resetExpenseForm();
   await refreshUI();
 }
+
 
 function applyFiltersHandler(event) {
   event.preventDefault();
@@ -268,6 +347,35 @@ function clearFilters() {
   activeFilters = { vehicleId: "", tripId: "", category: "", startDate: "", endDate: "" };
   document.getElementById("expenseFilterForm").reset();
   refreshUI();
+}
+
+async function syncExpenseReminder(expense, existingReminderId = "") {
+  const reminderEnabled = document.getElementById("expenseHasReminder").checked;
+  const nextExpenseDate = document.getElementById("expenseNextDate").value;
+  const reminderDays = Number(document.getElementById("expenseReminderDays").value || 0);
+  const reminders = await getAll("recurringExpenses");
+  const existingReminder = reminders.find(item => item.id === existingReminderId || item.expenseId === expense.id);
+
+  if (!reminderEnabled || !nextExpenseDate || reminderDays <= 0) {
+    if (existingReminder) {
+      await remove("recurringExpenses", existingReminder.id);
+    }
+    return;
+  }
+
+  await put("recurringExpenses", {
+    id: existingReminder?.id || existingReminderId || uid("rem"),
+    expenseId: expense.id,
+    name: expense.name,
+    amount: Number(expense.cost || 0),
+    vehicleId: expense.vehicleId,
+    tripId: expense.tripId || "",
+    category: expense.category,
+    nextExpenseDate,
+    reminderDays,
+    otherInfo: expense.otherInfo || "",
+    active: true
+  });
 }
 
 async function addCategoryHandler() {
@@ -293,15 +401,18 @@ function resetTripForm() {
 function resetExpenseForm() {
   document.getElementById("expenseForm").reset();
   document.getElementById("expenseId").value = "";
+  document.getElementById("expenseReminderId").value = "";
   document.getElementById("expenseFormTitle").textContent = "Add Expense";
   document.getElementById("expenseDate").value = todayISO();
+  toggleExpenseReminderFields(false, { clearWhenHidden: true });
 }
 
 async function refreshUI() {
-  const [vehicles, trips, expenses, categories, maintenanceSetting] = await Promise.all([
+  const [vehicles, trips, expenses, recurringExpenses, categories, maintenanceSetting] = await Promise.all([
     getAll("vehicles"),
     getAll("trips"),
     getAll("expenses"),
+    getAll("recurringExpenses"),
     getAll("categories"),
     getSetting("maintenanceCategories")
   ]);
@@ -312,7 +423,8 @@ async function refreshUI() {
   renderExpenses(expenses, vehicles, trips);
   renderMaintenance({ vehicles, expenses, categories, maintenanceSetting });
   renderReports({ vehicles, trips, expenses });
-  renderDashboard({ vehicles, trips, expenses });
+  renderDashboard({ vehicles, trips, expenses, recurringExpenses });
+  await notifyRecurringReminders(recurringExpenses, vehicles, trips);
 }
 
 function populateDropdowns({ vehicles, trips, categories }) {
@@ -336,6 +448,7 @@ function populateDropdowns({ vehicles, trips, categories }) {
   document.getElementById("filterCategory").value = activeFilters.category;
   document.getElementById("filterStartDate").value = activeFilters.startDate;
   document.getElementById("filterEndDate").value = activeFilters.endDate;
+
 
   const maintenanceVehicleFilter = document.getElementById("maintenanceVehicleFilter");
   if (maintenanceVehicleFilter) {
@@ -428,17 +541,22 @@ function renderExpenses(expenses, vehicles, trips) {
   }).join("");
 }
 
-function renderDashboard({ vehicles, trips, expenses }) {
+function renderDashboard({ vehicles, trips, expenses, recurringExpenses }) {
   const stats = document.getElementById("dashboardStats");
   const monthRange = getCurrentMonthRange();
   const currentMonthExpenses = expenses.filter(e => rangeMatches(e.date, monthRange.start, monthRange.end));
   const cards = [
-    { label: "Vehicles", value: vehicles.length },
-    { label: "Trips", value: trips.length },
-    { label: "Expenses", value: expenses.length },
+    { label: "Vehicles", value: vehicles.length, tab: "vehicles" },
+    { label: "Trips", value: trips.length, tab: "trips" },
+    { label: "Expenses", value: expenses.length, tab: "expenses" },
     { label: "This Month", value: formatCurrency(sumCost(currentMonthExpenses)) }
   ];
-  stats.innerHTML = cards.map(card => `<div class="stat-card"><h3>${card.label}</h3><strong>${card.value}</strong></div>`).join("");
+  stats.innerHTML = cards.map(card => card.tab
+    ? `<button type="button" class="stat-card stat-card-button" data-dashboard-tab="${card.tab}" aria-label="Open ${card.label} tab"><h3>${card.label}</h3><strong>${card.value}</strong></button>`
+    : `<div class="stat-card"><h3>${card.label}</h3><strong>${card.value}</strong></div>`
+  ).join("");
+
+  renderReminderCenter(recurringExpenses, vehicles, trips);
 
   const quick = document.getElementById("quickInsights");
   const recent = [...expenses].sort((a,b) => (b.date || "").localeCompare(a.date || "")).slice(0, 5);
@@ -455,6 +573,138 @@ function renderDashboard({ vehicles, trips, expenses }) {
   `).join("");
 }
 
+
+function renderReminderCenter(recurringExpenses, vehicles, trips) {
+  const container = document.getElementById("recurringReminderList");
+  const status = document.getElementById("notificationStatus");
+  if (!container || !status) return;
+
+  const reminders = getUpcomingRecurringReminders(recurringExpenses, vehicles, trips, 14);
+  status.textContent = getNotificationStatusMessage();
+
+  if (!reminders.length) {
+    container.innerHTML = `<div class="list-item"><strong>No upcoming reminders</strong><div class="meta">Add a reminder inside the Add Expense form.</div></div>`;
+    return;
+  }
+
+  container.innerHTML = reminders.map(reminder => `
+    <div class="list-item reminder-item ${reminder.daysUntil < 0 ? "is-overdue" : ""}">
+      <strong>${escapeHtml(reminder.name)}</strong>
+      <div class="meta">${escapeHtml(reminder.vehicleName)} · ${escapeHtml(reminder.category)} · ${formatCurrency(reminder.amount)}</div>
+      <div class="meta">Due: ${formatDate(reminder.dueDate)} · Alerts start: ${formatDate(reminder.reminderDate)}</div>
+      <div class="meta">${getReminderLabel(reminder.daysUntil)}${reminder.inReminderWindow ? " · Alert window active" : ""}</div>
+    </div>
+  `).join("");
+}
+
+function getUpcomingRecurringReminders(recurringExpenses, vehicles, trips, daysAhead = 14) {
+  const today = todayISO();
+  const horizon = addDays(today, daysAhead);
+  return recurringExpenses
+    .filter(item => item.active !== false)
+    .map(item => buildReminderRecord(item, vehicles, trips, today))
+    .filter(Boolean)
+    .filter(item => item.dueDate <= horizon)
+    .sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+}
+
+function buildReminderRecord(item, vehicles, trips, referenceDate = todayISO()) {
+  const nextExpenseDate = getReminderDate(item);
+  if (!nextExpenseDate) return null;
+  const vehicle = vehicles.find(v => v.id === item.vehicleId);
+  const trip = trips.find(t => t.id === item.tripId);
+  return {
+    ...item,
+    dueDate: nextExpenseDate,
+    reminderDate: addDays(nextExpenseDate, -Number(item.reminderDays || 0)),
+    vehicleName: vehicle ? vehicle.name : "Unknown vehicle",
+    tripName: trip ? trip.name : "",
+    daysUntil: diffInDays(referenceDate, nextExpenseDate),
+    inReminderWindow: isReminderActiveToday(item, referenceDate)
+  };
+}
+
+async function notifyRecurringReminders(recurringExpenses, vehicles, trips) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return;
+
+  const today = todayISO();
+  const reminders = getUpcomingRecurringReminders(recurringExpenses, vehicles, trips, 30)
+    .filter(item => isReminderActiveToday(item, today));
+  if (!reminders.length) return;
+
+  const current = await getSetting("recurringReminderNotifications");
+  const sentKeys = Array.isArray(current?.values) ? current.values : [];
+  let changed = false;
+
+  for (const reminder of reminders) {
+    const key = `${reminder.id}:${today}`;
+    if (sentKeys.includes(key)) continue;
+    new Notification(`Expense reminder: ${reminder.name}`, {
+      body: `${getReminderLabel(reminder.daysUntil)} for ${reminder.vehicleName}. Due ${formatDate(reminder.dueDate)}.`
+    });
+    sentKeys.push(key);
+    changed = true;
+  }
+
+  if (changed) {
+    await saveSetting("recurringReminderNotifications", { values: sentKeys.slice(-100) });
+  }
+}
+
+function getNotificationStatusMessage() {
+  if (!("Notification" in window)) {
+    return "This browser does not support the Notification API.";
+  }
+  if (Notification.permission === "granted") {
+    return "Browser alerts are enabled for expense reminders while the app is open.";
+  }
+  if (Notification.permission === "denied") {
+    return "Browser alerts are blocked for this app. You can still see reminders inside the dashboard.";
+  }
+  return "Browser alerts are not enabled yet. Use the button above if you want local reminder popups while the app is open.";
+}
+
+async function requestNotificationPermission() {
+  if (!("Notification" in window)) {
+    alert("This browser does not support notifications.");
+    return;
+  }
+  const permission = await Notification.requestPermission();
+  document.getElementById("notificationStatus").textContent = getNotificationStatusMessage();
+  if (permission === "granted") {
+    await refreshUI();
+  }
+}
+
+function getReminderLabel(daysUntil) {
+  if (daysUntil < 0) return `${Math.abs(daysUntil)} day(s) overdue`;
+  if (daysUntil === 0) return "Due today";
+  if (daysUntil === 1) return "Due tomorrow";
+  return `Due in ${daysUntil} days`;
+}
+
+function getReminderDate(item) {
+  return item?.nextExpenseDate || item?.dueDate || "";
+}
+
+function isReminderActiveToday(item, referenceDate = todayISO()) {
+  const dueDate = getReminderDate(item);
+  if (!dueDate || Number(item.reminderDays || 0) <= 0 || item.active === false) return false;
+  const startDate = addDays(dueDate, -Number(item.reminderDays || 0));
+  return referenceDate >= startDate && referenceDate <= dueDate;
+}
+
+function addDays(date, days) {
+  const next = new Date(`${date}T00:00:00`);
+  next.setDate(next.getDate() + days);
+  return toISO(next);
+}
+
+function diffInDays(startDate, endDate) {
+  const start = new Date(`${startDate}T00:00:00`);
+  const end = new Date(`${endDate}T00:00:00`);
+  return Math.round((end - start) / 86400000);
+}
 
 function renderMaintenance({ vehicles, expenses, categories, maintenanceSetting }) {
   const maintenanceList = document.getElementById("maintenanceList");
@@ -913,11 +1163,14 @@ async function deleteTrip(id) {
   await remove("trips", id);
   await refreshUI();
 }
+
 async function editExpense(id) {
-  const expenses = await getAll("expenses");
+  const [expenses, reminders] = await Promise.all([getAll("expenses"), getAll("recurringExpenses")]);
   const item = expenses.find(e => e.id === id);
   if (!item) return;
+  const reminder = reminders.find(entry => entry.expenseId === id);
   document.getElementById("expenseId").value = item.id;
+  document.getElementById("expenseReminderId").value = reminder?.id || "";
   document.getElementById("expenseName").value = item.name;
   document.getElementById("expenseDate").value = item.date;
   document.getElementById("expenseVehicle").value = item.vehicleId;
@@ -926,11 +1179,19 @@ async function editExpense(id) {
   document.getElementById("expenseTrip").value = item.tripId || "";
   document.getElementById("expenseCategory").value = item.category;
   document.getElementById("expenseFuelVolume").value = item.fuelVolume || "";
+  document.getElementById("expenseNextDate").value = reminder ? getReminderDate(reminder) : "";
+  document.getElementById("expenseReminderDays").value = String(reminder?.reminderDays || 1);
+  toggleExpenseReminderFields(Boolean(reminder));
   document.getElementById("expenseOtherInfo").value = item.otherInfo || "";
   document.getElementById("expenseFormTitle").textContent = "Update Expense";
   activateTab("expenses");
 }
 async function deleteExpense(id) {
+  const reminders = await getAll("recurringExpenses");
+  const linkedReminder = reminders.find(entry => entry.expenseId === id);
+  if (linkedReminder) {
+    await remove("recurringExpenses", linkedReminder.id);
+  }
   await remove("expenses", id);
   await refreshUI();
 }

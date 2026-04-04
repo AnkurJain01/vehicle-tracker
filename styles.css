@@ -241,6 +241,21 @@ button.danger {
   box-shadow: 0 6px 18px rgba(0, 0, 0, 0.18);
 }
 
+.stat-card-button {
+  text-align: left;
+  color: var(--text);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.stat-card-button:hover,
+.stat-card-button:focus-visible {
+  transform: translateY(-2px);
+  border-color: var(--primary);
+  box-shadow: 0 12px 28px rgba(14, 165, 233, 0.2);
+  background: linear-gradient(180deg, #0f172a, #1e293b);
+  color: var(--text);
+}
+
 .stat-card h3 {
   margin: 0 0 0.35rem;
   font-size: 0.95rem;
@@ -309,6 +324,28 @@ button.danger {
   align-items: end;
   gap: 1rem;
   margin-bottom: 1rem;
+}
+
+.filters-header {
+  align-items: center;
+}
+
+.filters-header h2 {
+  margin: 0;
+}
+
+.filters-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.filters-content {
+  display: block;
+}
+
+.filters-content.is-collapsed {
+  display: none;
 }
 
 .compact-field {
@@ -383,6 +420,7 @@ button.danger {
 }
 
 
+
 .checklist {
   display: grid;
   gap: 0.65rem;
@@ -440,4 +478,48 @@ button.danger {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.75rem;
+}
+
+.compact-button {
+  width: auto;
+}
+
+
+.reminder-item.is-overdue {
+  border-color: rgba(239, 68, 68, 0.7);
+}
+
+@media (max-width: 640px) {
+  .compact-button {
+    width: 100%;
+  }
+}
+
+.compact-info {
+  margin-top: 0;
+}
+
+.checkbox-field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.checkbox-field input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--primary);
+}
+
+.reminder-fields {
+  grid-column: 1 / -1;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: rgba(15, 23, 42, 0.35);
+}
+
+.reminder-fields.is-collapsed {
+  display: none;
 }

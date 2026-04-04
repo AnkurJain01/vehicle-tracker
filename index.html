@@ -29,6 +29,18 @@
     <section id="dashboard" class="tab-panel active">
       <div class="stats-grid" id="dashboardStats"></div>
 
+      <section class="card">
+        <div class="section-header">
+          <div>
+            <h2>Reminder Center</h2>
+            <p class="muted">Recurring expense reminders are stored locally on this device and checked when the app is opened.</p>
+          </div>
+          <button type="button" class="secondary compact-button" id="enableNotificationsBtn">Enable Browser Alerts</button>
+        </div>
+        <div id="notificationStatus" class="info-box">Browser alerts are optional and only work while this app is active on this device.</div>
+        <div id="recurringReminderList" class="stack"></div>
+      </section>
+
       <div class="grid two">
         <section class="card">
           <h2>Backup & Restore</h2>
@@ -122,85 +134,138 @@
 
     <section id="expenses" class="tab-panel">
       <div class="grid two">
-        <section class="card">
-          <h2 id="expenseFormTitle">Add Expense</h2>
-          <form id="expenseForm" class="form-grid">
-            <input type="hidden" id="expenseId" />
-            <label>
-              Name / Description
-              <input type="text" id="expenseName" required />
-            </label>
-            <label>
-              Date
-              <input type="date" id="expenseDate" required />
-            </label>
-            <label>
-              Vehicle
-              <select id="expenseVehicle" required></select>
-            </label>
-            <label>
-              KM Reading
-              <input type="number" id="expenseKmReading" min="0" step="0.1" required />
-            </label>
-            <label>
-              Cost
-              <input type="number" id="expenseCost" min="0" step="0.01" required />
-            </label>
-            <label>
-              Trip (optional)
-              <select id="expenseTrip"></select>
-            </label>
-            <label>
-              Category
-              <div class="inline-row">
-                <select id="expenseCategory" required></select>
-                <input type="text" id="newCategoryInput" placeholder="New type" />
-                <button type="button" class="secondary" id="addCategoryBtn">Add</button>
+        <section class="card expense-section-card expense-section-collapsed" id="expenseFormCard">
+          <div class="section-header filters-header">
+            <h2 id="expenseFormTitle">Add Expense</h2>
+            <button
+              type="button"
+              class="secondary filters-toggle"
+              id="expenseFormToggleBtn"
+              data-target="expenseFormCard"
+              data-content="expenseFormContent"
+              aria-controls="expenseFormContent"
+              aria-expanded="false"
+            >
+              Show Form
+            </button>
+          </div>
+          <div id="expenseFormContent" class="filters-content">
+            <form id="expenseForm" class="form-grid">
+              <input type="hidden" id="expenseId" />
+              <input type="hidden" id="expenseReminderId" />
+              <label>
+                Name / Description
+                <input type="text" id="expenseName" required />
+              </label>
+              <label>
+                Date
+                <input type="date" id="expenseDate" required />
+              </label>
+              <label>
+                Vehicle
+                <select id="expenseVehicle" required></select>
+              </label>
+              <label>
+                KM Reading
+                <input type="number" id="expenseKmReading" min="0" step="0.1" required />
+              </label>
+              <label>
+                Cost
+                <input type="number" id="expenseCost" min="0" step="0.01" required />
+              </label>
+              <label>
+                Trip (optional)
+                <select id="expenseTrip"></select>
+              </label>
+              <label>
+                Category
+                <div class="inline-row">
+                  <select id="expenseCategory" required></select>
+                  <input type="text" id="newCategoryInput" placeholder="New type" />
+                  <button type="button" class="secondary" id="addCategoryBtn">Add</button>
+                </div>
+              </label>
+              <label>
+                Fuel Volume (optional, for mileage)
+                <input type="number" id="expenseFuelVolume" min="0" step="0.01" placeholder="Litres" />
+              </label>
+              <label class="full checkbox-field">
+                <span>Set Reminder</span>
+                <input type="checkbox" id="expenseHasReminder" />
+              </label>
+              <div id="expenseReminderFields" class="form-grid reminder-fields is-collapsed">
+                <label>
+                  Next Expense Date
+                  <input type="date" id="expenseNextDate" />
+                </label>
+                <label>
+                  Remind Before
+                  <select id="expenseReminderDays">
+                    <option value="1">1 day</option>
+                    <option value="2">2 days</option>
+                    <option value="3">3 days</option>
+                    <option value="7">7 days</option>
+                  </select>
+                </label>
+                <div class="info-box compact-info full">
+                  The app will show daily alerts from the selected reminder window until the next expense date while the app is active on this device.
+                </div>
               </div>
-            </label>
-            <label>
-              Fuel Volume (optional, for mileage)
-              <input type="number" id="expenseFuelVolume" min="0" step="0.01" placeholder="Litres" />
-            </label>
-            <label class="full">
-              Other Info
-              <textarea id="expenseOtherInfo" rows="3" placeholder="Notes, service details, toll booth, etc."></textarea>
-            </label>
-            <div class="actions">
-              <button type="submit">Save Expense</button>
-              <button type="button" class="secondary" id="expenseResetBtn">Clear</button>
-            </div>
-          </form>
+              <label class="full">
+                Other Info
+                <textarea id="expenseOtherInfo" rows="3" placeholder="Notes, service details, toll booth, etc."></textarea>
+              </label>
+              <div class="actions">
+                <button type="submit">Save Expense</button>
+                <button type="button" class="secondary" id="expenseResetBtn">Clear</button>
+              </div>
+            </form>
+          </div>
         </section>
 
-        <section class="card">
-          <h2>Expense Filters</h2>
-          <form id="expenseFilterForm" class="form-grid">
-            <label>
-              Vehicle
-              <select id="filterVehicle"></select>
-            </label>
-            <label>
-              Trip
-              <select id="filterTrip"></select>
-            </label>
-            <label>
-              Category
-              <select id="filterCategory"></select>
-            </label>
-            <label>
-              Start Date
-              <input type="date" id="filterStartDate" />
-            </label>
-            <label>
-              End Date
-              <input type="date" id="filterEndDate" />
-            </label>
-            <div class="actions">
-              <button type="submit">Apply Filters</button>
-              <button type="button" class="secondary" id="clearFiltersBtn">Clear</button>
-            </div>
-          </form>
+        <section class="card expense-section-card expense-section-collapsed" id="expenseFiltersCard">
+          <div class="section-header filters-header">
+            <h2>Expense Filters</h2>
+            <button
+              type="button"
+              class="secondary filters-toggle"
+              id="expenseFiltersToggleBtn"
+              data-target="expenseFiltersCard"
+              data-content="expenseFiltersContent"
+              aria-controls="expenseFiltersContent"
+              aria-expanded="false"
+            >
+              Show Filters
+            </button>
+          </div>
+          <div id="expenseFiltersContent" class="filters-content">
+            <form id="expenseFilterForm" class="form-grid">
+              <label>
+                Vehicle
+                <select id="filterVehicle"></select>
+              </label>
+              <label>
+                Trip
+                <select id="filterTrip"></select>
+              </label>
+              <label>
+                Category
+                <select id="filterCategory"></select>
+              </label>
+              <label>
+                Start Date
+                <input type="date" id="filterStartDate" />
+              </label>
+              <label>
+                End Date
+                <input type="date" id="filterEndDate" />
+              </label>
+              <div class="actions">
+                <button type="submit">Apply Filters</button>
+                <button type="button" class="secondary" id="clearFiltersBtn">Clear</button>
+              </div>
+            </form>
+          </div>
           <h2>Expenses</h2>
           <div id="expenseList" class="list"></div>
         </section>
