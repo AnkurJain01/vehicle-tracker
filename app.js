@@ -7,6 +7,8 @@ const DEFAULT_CATEGORIES = ["Fuel", "Service", "Repair", "Toll", "Parking", "Ins
 const STORE_NAMES = ["vehicles", "trips", "expenses", "recurringExpenses", "categories", "settings"];
 const DEFAULT_MAINTENANCE_CATEGORIES = ["Service", "Repair", "Tyre", "Wheel Alignment", "Wheel Balance", "Alignment", "Balancing", "Pollution", "Insurance"];
 let db;
+let reminderDayStartTimerId = null;
+let lastReminderCheckDate = "";
 let activeFilters = {
   vehicleId: "",
   tripId: "",
@@ -28,7 +30,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     bindBackupRestore();
     bindReportControls();
     bindMaintenanceControls();
-    registerServiceWorker();
+    await registerServiceWorker();
     await refreshUI();
   } catch (error) {
     console.error("App init failed:", error);
@@ -262,6 +264,36 @@ function bindRecurringReminderControls() {
   }
 
   window.addEventListener("focus", () => refreshUI());
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) {
+      refreshUI();
+    }
+  });
+
+  scheduleReminderDayStartCheck();
+}
+
+function scheduleReminderDayStartCheck() {
+  if (reminderDayStartTimerId !== null) {
+    window.clearTimeout(reminderDayStartTimerId);
+  }
+
+  reminderDayStartTimerId = window.setTimeout(async () => {
+    try {
+      await runRecurringReminderCheck();
+    } catch (error) {
+      console.error("Day-start reminder check failed:", error);
+    } finally {
+      scheduleReminderDayStartCheck();
+    }
+  }, getMsUntilNextDayStart());
+}
+
+function getMsUntilNextDayStart() {
+  const now = new Date();
+  const next = new Date(now);
+  next.setHours(24, 0, 5, 0);
+  return Math.max(1000, next.getTime() - now.getTime());
 }
 
 function bindBackupRestore() {
@@ -438,7 +470,28 @@ async function refreshUI() {
   renderMaintenance({ vehicles, expenses, categories, maintenanceSetting });
   renderReports({ vehicles, trips, expenses });
   renderDashboard({ vehicles, trips, expenses, recurringExpenses });
-  await notifyRecurringReminders(recurringExpenses, vehicles, trips);
+  await runRecurringReminderCheck(recurringExpenses, vehicles, trips);
+}
+
+async function runRecurringReminderCheck(recurringExpenses = null, vehicles = null, trips = null) {
+  const status = document.getElementById("notificationStatus");
+  if (status) {
+    status.textContent = getNotificationStatusMessage();
+  }
+
+  lastReminderCheckDate = todayISO();
+
+  if (recurringExpenses && vehicles && trips) {
+    await notifyRecurringReminders(recurringExpenses, vehicles, trips);
+    return;
+  }
+
+  const [loadedVehicles, loadedTrips, loadedRecurringExpenses] = await Promise.all([
+    getAll("vehicles"),
+    getAll("trips"),
+    getAll("recurringExpenses")
+  ]);
+  await notifyRecurringReminders(loadedRecurringExpenses, loadedVehicles, loadedTrips);
 }
 
 function populateDropdowns({ vehicles, trips, categories }) {
@@ -646,36 +699,60 @@ async function notifyRecurringReminders(recurringExpenses, vehicles, trips) {
     .filter(item => isReminderActiveToday(item, today));
   if (!reminders.length) return;
 
-  const current = await getSetting("recurringReminderNotifications");
-  const sentKeys = Array.isArray(current?.values) ? current.values : [];
-  let changed = false;
-
   for (const reminder of reminders) {
-    const key = `${reminder.id}:${today}`;
-    if (sentKeys.includes(key)) continue;
-    new Notification(`Expense reminder: ${reminder.name}`, {
-      body: `${getReminderLabel(reminder.daysUntil)} for ${reminder.vehicleName}. Due ${formatDate(reminder.dueDate)}.`
-    });
-    sentKeys.push(key);
-    changed = true;
+    await showReminderNotification(reminder);
+  }
+}
+
+async function showReminderNotification(reminder) {
+  const title = `Expense reminder: ${reminder.name}`;
+  const options = {
+    body: `${getReminderLabel(reminder.daysUntil)} for ${reminder.vehicleName}. Due ${formatDate(reminder.dueDate)}.`,
+    tag: `expense-reminder:${reminder.id}`,
+    icon: "./icons/icon-192.png",
+    badge: "./icons/icon-192.png",
+    data: { reminderId: reminder.id, dueDate: reminder.dueDate }
+  };
+
+  if ("serviceWorker" in navigator) {
+    try {
+      const registration = await navigator.serviceWorker.getRegistration();
+      if (registration?.showNotification) {
+        await registration.showNotification(title, options);
+        return true;
+      }
+    } catch (error) {
+      console.error("Service worker notification failed:", error);
+    }
   }
 
-  if (changed) {
-    await saveSetting("recurringReminderNotifications", { values: sentKeys.slice(-100) });
+  try {
+    new Notification(title, options);
+    return true;
+  } catch (error) {
+    console.error("Window notification failed:", error);
+    return false;
   }
+}
+
+function isNotificationOriginSupported() {
+  return window.isSecureContext || ["localhost", "127.0.0.1", "::1"].includes(window.location.hostname);
 }
 
 function getNotificationStatusMessage() {
   if (!("Notification" in window)) {
     return "This browser does not support the Notification API.";
   }
+  if (!isNotificationOriginSupported()) {
+    return "Browser alerts require HTTPS or localhost. Opening index.html directly from a file path will not persist notification permissions.";
+  }
   if (Notification.permission === "granted") {
-    return "Browser alerts are enabled for expense reminders while the app is open.";
+    return "Browser alerts are enabled. Reloading the app can retrigger active reminders, and the app will try again at the start of each new day while it remains running.";
   }
   if (Notification.permission === "denied") {
     return "Browser alerts are blocked for this app. You can still see reminders inside the dashboard.";
   }
-  return "Browser alerts are not enabled yet. Use the button above if you want local reminder popups while the app is open.";
+  return "Browser alerts are not enabled yet. Open this app on HTTPS or localhost, then use the button above to allow notifications.";
 }
 
 async function requestNotificationPermission() {
@@ -683,10 +760,24 @@ async function requestNotificationPermission() {
     alert("This browser does not support notifications.");
     return;
   }
+  if (!isNotificationOriginSupported()) {
+    alert("Notifications require this app to be opened on HTTPS or localhost. Do not open index.html directly from a file path.");
+    document.getElementById("notificationStatus").textContent = getNotificationStatusMessage();
+    return;
+  }
+
+  await registerServiceWorker();
+
+  if (Notification.permission === "granted") {
+    document.getElementById("notificationStatus").textContent = getNotificationStatusMessage();
+    await runRecurringReminderCheck();
+    return;
+  }
+
   const permission = await Notification.requestPermission();
   document.getElementById("notificationStatus").textContent = getNotificationStatusMessage();
   if (permission === "granted") {
-    await refreshUI();
+    await runRecurringReminderCheck();
   }
 }
 
@@ -1252,8 +1343,15 @@ function fileToDataUrl(file) {
     reader.readAsDataURL(file);
   });
 }
-function registerServiceWorker() {
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => navigator.serviceWorker.register("./service-worker.js").catch(console.error));
+async function registerServiceWorker() {
+  if (!("serviceWorker" in navigator) || !isNotificationOriginSupported()) {
+    return null;
+  }
+
+  try {
+    return await navigator.serviceWorker.register("./service-worker.js");
+  } catch (error) {
+    console.error("Service worker registration failed:", error);
+    return null;
   }
 }
